@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Finance Game + AI Tutor</title>
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+body { margin:0; font-family: "Segoe UI", sans-serif; background:#f5f5f5; color:#111; }
+header { display:flex; justify-content:space-between; align-items:center; padding:15px 30px; background:#0f111a; color:white; }
+header h1 { font-size:22px; color:#1db954; }
+#ticker-input { padding:5px 10px; border-radius:5px; border:none; margin-left:10px; }
+button { padding:6px 12px; border:none; border-radius:5px; background:#1db954; color:white; cursor:pointer; margin-left:5px; }
+.container { display:flex; margin-top:10px; }
+.left-panel { width:35%; padding:15px; }
+.right-panel { width:65%; padding:15px; }
+#chart { width:100%; height:400px; background:white; border-radius:5px; }
+table { width:100%; border-collapse: collapse; margin-top:10px; background:white; border-radius:5px; }
+th, td { padding:8px; text-align:center; border-bottom:1px solid #ddd; }
+th { background:#1db954; color:white; }
+#ai-box { margin-top:20px; background:white; padding:10px; border-radius:5px; }
+#ai-messages { height:150px; overflow-y:auto; border:1px solid #ddd; padding:5px; border-radius:5px; margin-bottom:5px; font-size:14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📊 Finance Game</h1>
+  <div>
+    <input id="ticker" placeholder="Ticker e.g. AAPL" type="text"/>
+    <button onclick="loadStock()">Load</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="left-panel">
+    <div>💰 Cash: $<span id="cash">10000</span></div>
+    <div>📦 Shares Owned: <span id="shares">0</span></div>
+    <div>🏷 Current Stock: <span id="symbol">AAPL</span></div>
+    <div>🏆 Portfolio Value: $<span id="value">10000</span></div>
+    <button onclick="buy()">Buy 1 Share</button>
+    <button onclick="sell()">Sell 1 Share</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Shares</th>
+          <th>Price</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td id="t-table">AAPL</td>
+          <td id="s-table">0</td>
+          <td id="p-table">0</td>
+          <td id="v-table">0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div id="ai-box">
+      <div id="ai-messages"></div>
+      <input id="ai-input" placeholder="Ask tutor..." style="width:80%"/>
+      <button onclick="askTutor()">Ask</button>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div id="chart"></div>
+  </div>
+</div>
+
+<script>
+let cash = 10000;
+let shares = 0;
+let currentPrice = 0;
+let currentTicker = "AAPL";
+
+// PUT YOUR FINNHUB API KEY HERE
+const API_KEY = "d69kar1r01qm5rv47sl0d69kar1r01qm5rv47slg";
+
+let chart = LightweightCharts.createChart(document.getElementById('chart'), {
+  width: document.getElementById('chart').clientWidth,
+  height: 400,
+  layout: { background: { color: "#ffffff" }, textColor: "#111" },
+  grid: { vertLines: { color: '#eee' }, horzLines: { color:'#eee' } }
+});
+let candleSeries = chart.addCandlestickSeries();
+
+async function loadStock(){
+  const ticker = (document.getElementById("ticker").value || "AAPL").toUpperCase();
+  currentTicker = ticker;
+  document.getElementById("symbol").innerText = ticker;
+  try{
+    const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&count=30&token=${API_KEY}`);
+    const data = await res.json();
+    if(data.s!=="ok") throw new Error("Invalid ticker");
+    const candles = data.t.map((t,i)=>({
+      time: new Date(t*1000).toISOString().split("T")[0],
+      open: data.o[i],
+      high: data.h[i],
+      low: data.l[i],
+      close: data.c[i]
+    }));
+    candleSeries.setData(candles);
+    currentPrice = data.c[data.c.length-1];
+    updatePortfolio();
+  }catch(e){ alert("Error loading stock. Check ticker and API key."); }
+}
+
+function buy(){ if(cash>=currentPrice){ cash-=currentPrice; shares++; updatePortfolio(); } }
+function sell(){ if(shares>0){ cash+=currentPrice; shares--; updatePortfolio(); } }
+
+function updatePortfolio(){
+  document.getElementById("cash").innerText = cash.toFixed(2);
+  document.getElementById("shares").innerText = shares;
+  document.getElementById("value").innerText = (cash+shares*currentPrice).toFixed(2);
+  document.getElementById("t-table").innerText = currentTicker;
+  document.getElementById("s-table").innerText = shares;
+  document.getElementById("p-table").innerText = currentPrice.toFixed(2);
+  document.getElementById("v-table").innerText = (shares*currentPrice).toFixed(2);
+}
+
+function askTutor(){
+  const input = document.getElementById('ai-input').value.toLowerCase();
+  let response = "I don't understand.";
+  if(input.includes("buy") && input.includes(currentTicker.toLowerCase())) response="You can buy if you have enough cash.";
+  else if(input.includes("sell") && input.includes(currentTicker.toLowerCase())) response="You can sell if you have shares.";
+  else if(input.includes("portfolio")) response=`Your portfolio is $${(cash+shares*currentPrice).toFixed(2)}.`;
+  else if(input.includes("price") && input.includes(currentTicker.toLowerCase())) response=`Current price of ${currentTicker} is $${currentPrice.toFixed(2)}.`;
+  appendAIMessage("You: "+document.getElementById('ai-input').value);
+  appendAIMessage("Tutor: "+response);
+  document.getElementById('ai-input').value="";
+}
+
+function appendAIMessage(msg){
+  const box=document.getElementById('ai-messages');
+  const p=document.createElement('div'); p.innerText=msg; box.appendChild(p); box.scrollTop=box.scrollHeight;
+}
+
+// Optional: simulate small market fluctuation
+setInterval(()=>{
+  const change=(Math.random()*4-2)/100;
+  currentPrice+=currentPrice*change;
+  updatePortfolio();
+}, Math.random()*30000+30000);
+
+loadStock();
+</script>
+</body>
+</html>
